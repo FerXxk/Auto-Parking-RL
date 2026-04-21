@@ -16,7 +16,7 @@ function in = autoParkingValetResetFcn3D(in)
     end
 
     % Setup/move actor vehicles
-    setupActorVehicles("rlAutoParkingValet3D23b",freeSpotIndex);
+    setupActorVehicles("rlAutoParkingValet3D",freeSpotIndex);
     info = ParkingLotManager.getInfo();
     egoTargetPose = localFindGoalPose(freeSpotIndex,info);
 

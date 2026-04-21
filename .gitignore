@@ -1,0 +1,28 @@
+# MATLAB/Simulink
+slprj/
+*.slxc
+*.asv
+*.m~
+*.mex*
+*.log
+*.p
+*.p.lock
+# *.mat
+!ObservationBus.mat  # Keep the essential observation bus file
+!ParkingValetAgentTrained.mat  # If you want to keep the initial pretrained agent
+
+# Saved agents from RL training (if you want to keep them out)
+savedAgents/
+SAC_Parking_Agent.mat
+
+# Unreal Engine / Simulation
+UnrealEngineVisualization/
+PCViz/
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Other
+temp/
+work/

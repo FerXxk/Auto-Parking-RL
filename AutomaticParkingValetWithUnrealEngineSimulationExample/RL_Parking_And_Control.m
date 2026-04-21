@@ -335,23 +335,30 @@ posePath = [
     fullyConnectedLayer(64,Name="pose_fc")];
 
 % Concatenated path
-mainPath = [
+commonPath = [
     concatenationLayer(1,2,Name="concat")
     reluLayer
     fullyConnectedLayer(256)
     reluLayer
     fullyConnectedLayer(128)
-    reluLayer
-    fullyConnectedLayer(actInfo(1).Dimension(1),Name="criticOutLyr")
-    tanhLayer];
+    reluLayer(Name="commonOut")];
+
+meanPath = fullyConnectedLayer(actInfo(1).Dimension(1),Name="meanOut");
+stdPath = [
+    fullyConnectedLayer(actInfo(1).Dimension(1),Name="stdOut_fc")
+    softplusLayer(Name="stdOut")];
 
 % Convert to layerGraph object and connect layers
 actorNet = layerGraph(lidarPath);
 actorNet = addLayers(actorNet,posePath);
-actorNet = addLayers(actorNet,mainPath);
+actorNet = addLayers(actorNet,commonPath);
+actorNet = addLayers(actorNet,meanPath);
+actorNet = addLayers(actorNet,stdPath);
 
 actorNet = connectLayers(actorNet,"lidar_fc","concat/in1");
 actorNet = connectLayers(actorNet,"pose_fc","concat/in2");
+actorNet = connectLayers(actorNet,"commonOut","meanOut");
+actorNet = connectLayers(actorNet,"commonOut","stdOut_fc");
 %% 
 % Convert to a <docid:nnet_ref#object_dlnetwork |dlnetwork|> object and display 
 % information about the network.
@@ -359,25 +366,20 @@ actorNet = connectLayers(actorNet,"pose_fc","concat/in2");
 actordlnet = dlnetwork(actorNet);
 summary(actordlnet)
 %% 
-% Create the actor object for the TD3 agent. For more information see <docid:rl_ref#mw_c2909424-90f4-4a52-803b-73310483e6c3 
-% |rlContinuousDeterministicActor|>.
+% Create the actor object for the SAC agent. For more information see <docid:rl_ref#mw_c2909424-90f4-4a52-803b-73310483e6c3 
+% |rlContinuousGaussianActor|>.
 
-actor = rlContinuousDeterministicActor(actordlnet,obsInfo,actInfo);
+actor = rlContinuousGaussianActor(actordlnet,obsInfo,actInfo,...
+    ActionMeanOutputNames="meanOut",ActionStandardDeviationOutputNames="stdOut");
 %% 
-% Specify the agent options and create the TD3 agent. For more information on 
-% TD3 agent options, see <docid:rl_ref#mw_372ffd1e-e1d2-453c-a691-cfef5da40ef8 
-% |rlTD3AgentOptions|>.
+% Specify the agent options and create the SAC agent. For more information on 
+% SAC agent options, see <docid:rl_ref#mw_372ffd1e-e1d2-453c-a691-cfef5da40ef8 
+% |rlSACAgentOptions|>.
 
-agentOpts = rlTD3AgentOptions(SampleTime=Ts, ...
+agentOpts = rlSACAgentOptions(SampleTime=Ts, ...
     DiscountFactor=0.99, ...
     ExperienceBufferLength=1e6, ...
     MiniBatchSize=256);
-%% 
-% Set the noise options for exploration.
-
-agentOpts.ExplorationModel.StandardDeviation = 0.1;
-agentOpts.ExplorationModel.StandardDeviationDecayRate = 1e-4;
-agentOpts.ExplorationModel.StandardDeviationMin = 0.01;
 %% 
 % For this example, set the actor and critic learn rates to |1e-3|, respectively. 
 % Set a gradient threshold factor of |1| to limit the gradients during training. 
@@ -397,9 +399,10 @@ agentOpts.CriticOptimizerOptions(1).GradientThreshold = 1;
 %% 
 % Create the agent using the actor, the critics, and the agent options objects. 
 % For more information, see <docid:rl_ref#mw_e503778e-73fb-4775-877e-6a72558f405f 
-% |rlTD3Agent|>.
+% |rlSACAgent|>.
 
-agent = rlTD3Agent(actor,critic,agentOpts);
+agent = rlSACAgent(actor,critic,agentOpts);
+
 % Train Agent
 % To train the agent, first specify the training options.
 % 
@@ -409,6 +412,12 @@ agent = rlTD3Agent(actor,critic,agentOpts);
 % of |116| or greater. Specify the options for training using the <docid:rl_ref#mw_1f5122fe-cb3a-4c27-8c80-1ce46c013bf0 
 % |rlTrainingOptions|> function.
 
+% Define the directory for saving intermediate agents
+saveDir = "savedAgents";
+if ~exist(saveDir, "dir")
+    mkdir(saveDir);
+end
+
 trainOpts = rlTrainingOptions(...
     MaxEpisodes=10000,...
     MaxStepsPerEpisode=200,...
@@ -416,8 +425,11 @@ trainOpts = rlTrainingOptions(...
     Plots="training-progress",...
     StopTrainingCriteria="AverageReward",...
     StopTrainingValue=116,...
-    UseParallel=false);
-%% 
+    UseParallel=false,...
+    SaveAgentCriteria="AverageReward",...
+    SaveAgentValue=100,...
+    SaveAgentDirectory=saveDir);
+
 % Train the agent using the <docid:rl_ref#mw_c0ccd38c-bbe6-4609-a87d-52ebe4767852 
 % |train|> function. Fully training this agent is a computationally intensive 
 % process that may take several hours to complete. To save time while running 
@@ -425,6 +437,13 @@ trainOpts = rlTrainingOptions(...
 % train the agent yourself, set |doTraining| to |true|.
 
 doTraining = true;
+
+% Check for existing saved agent to resume training
+if doTraining && exist("SAC_Parking_Agent.mat", "file")
+    load("SAC_Parking_Agent.mat", "agent");
+    disp(">>> Agente SAC detectado: Cargando pesos anteriores para continuar el entrenamiento.");
+end
+
 if doTraining
 
     % Disable UE and point cloud visualization
@@ -435,6 +454,9 @@ if doTraining
 
     % Start training agent
     trainingResult = train(agent,env,trainOpts); 
+
+    % Save the trained SAC agent
+    save("SAC_Parking_Agent.mat","agent");
 
 else
     load("ParkingValetAgentTrained.mat","agent");
