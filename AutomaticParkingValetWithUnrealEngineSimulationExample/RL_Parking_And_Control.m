@@ -388,13 +388,13 @@ agentOpts = rlSACAgentOptions(SampleTime=Ts, ...
 % 
 % Specify training options for the actor.
 
-agentOpts.ActorOptimizerOptions.LearnRate = 1e-3;
+agentOpts.ActorOptimizerOptions.LearnRate = 1e-4;
 agentOpts.ActorOptimizerOptions.GradientThreshold = 1;
 agentOpts.ActorOptimizerOptions.L2RegularizationFactor = 1e-3;
 %% 
 % Specify training options for the critic.
 
-agentOpts.CriticOptimizerOptions(1).LearnRate = 1e-3;
+agentOpts.CriticOptimizerOptions(1).LearnRate = 1e-4;
 agentOpts.CriticOptimizerOptions(1).GradientThreshold = 1;
 %% 
 % Create the agent using the actor, the critics, and the agent options objects. 
