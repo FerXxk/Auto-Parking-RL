@@ -4,7 +4,7 @@
 % control (MPC) with reinforcement learning (RL) to perform a parking maneuver. 
 % Unreal Engine® is used for environment perception and visualization.
 % 
-% 
+ parallel.gpu.enableCUDAForwardCompatibility(true)
 % 
 % The control objective is to park the vehicle in an empty spot after starting 
 % from an initial pose. The control algorithm executes a series of maneuvers while 
@@ -439,9 +439,9 @@ trainOpts = rlTrainingOptions(...
 doTraining = true;
 
 % Check for existing saved agent to resume training
-if doTraining && exist("SAC_Parking_Agent.mat", "file")
-    load("SAC_Parking_Agent.mat", "agent");
-    disp(">>> Agente SAC detectado: Cargando pesos anteriores para continuar el entrenamiento.");
+if doTraining && exist("SAC_Parking_Agent_v2.mat", "file")
+    load("SAC_Parking_Agent_v2.mat", "agent");
+    disp(">>> Agente SAC v2 detectado: Cargando pesos anteriores para continuar el entrenamiento.");
 end
 
 if doTraining
@@ -456,7 +456,7 @@ if doTraining
     trainingResult = train(agent,env,trainOpts); 
 
     % Save the trained SAC agent
-    save("SAC_Parking_Agent.mat","agent");
+    save("SAC_Parking_Agent_v2.mat","agent");
 
 else
     load("ParkingValetAgentTrained.mat","agent");
