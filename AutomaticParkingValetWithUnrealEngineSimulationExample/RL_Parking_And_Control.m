@@ -436,7 +436,7 @@ trainOpts = rlTrainingOptions(...
 % this example, load a pretrained agent by setting |doTraining| to |false|. To 
 % train the agent yourself, set |doTraining| to |true|.
 
-doTraining = true;
+doTraining = false;
 
 % Check for existing saved agent to resume training
 if doTraining && exist("SAC_Parking_Agent_v2.mat", "file")
@@ -459,7 +459,7 @@ if doTraining
     save("SAC_Parking_Agent_v2.mat","agent");
 
 else
-    load("ParkingValetAgentTrained.mat","agent");
+    load("SAC_Parking_Agent_v2.mat","agent");
 end
 %% 
 % 
