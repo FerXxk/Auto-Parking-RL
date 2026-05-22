@@ -90,6 +90,6 @@ function pose = localFindGoalPose(freeloc,info)
     if isNorthLoc
         pose = [goalXY, pi/2];
     else
-        pose = [goalXY, 3*pi/2];
+        pose = [goalXY, -pi/2];
     end
 end

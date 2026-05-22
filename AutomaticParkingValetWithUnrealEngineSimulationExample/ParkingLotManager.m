@@ -40,7 +40,7 @@ classdef ParkingLotManager < handle
                 if isNorthLoc
                     pose = [goalXY, pi/2];
                 else
-                    pose = [goalXY, 3*pi/2];
+                    pose = [goalXY, -pi/2];
                 end
             else
                 pose = [0,0,0];
