@@ -387,14 +387,14 @@ agentOpts = rlSACAgentOptions(SampleTime=Ts, ...
 % |rlOptimizerOptions|>.
 % 
 % Specify training options for the actor.
-
-agentOpts.ActorOptimizerOptions.LearnRate = 1e-4;
+% Mantener las tasas de aprendizaje (ya son altas), pero soltar el "freno" L2
+agentOpts.ActorOptimizerOptions.LearnRate = 1e-3;
 agentOpts.ActorOptimizerOptions.GradientThreshold = 1;
 agentOpts.ActorOptimizerOptions.L2RegularizationFactor = 1e-3;
 %% 
 % Specify training options for the critic.
 
-agentOpts.CriticOptimizerOptions(1).LearnRate = 1e-4;
+agentOpts.CriticOptimizerOptions(1).LearnRate = 1e-3;
 agentOpts.CriticOptimizerOptions(1).GradientThreshold = 1;
 %% 
 % Create the agent using the actor, the critics, and the agent options objects. 
@@ -436,7 +436,7 @@ trainOpts = rlTrainingOptions(...
 % this example, load a pretrained agent by setting |doTraining| to |false|. To 
 % train the agent yourself, set |doTraining| to |true|.
 
-doTraining = false;
+doTraining = true;
 
 % Check for existing saved agent to resume training
 if doTraining && exist("SAC_Parking_Agent_v2.mat", "file")
@@ -465,21 +465,36 @@ end
 % 
 %% Simulate Parking Task
 % To validate the trained agent, simulate the model and observe the parking 
-% maneuver. Enable both Unreal Engine and point cloud visualization to get a more 
-% complete view of the vehicle's behavior.
+% maneuver across multiple parking spots. Enable both Unreal Engine and 
+% point cloud visualization to get a more complete view of the vehicle's behavior.
 
 setVisualizationOptions(UEViz="on",PCViz="on");
-sim(mdl);
-%% 
-% The vehicle tracks the reference path using the MPC controller before switching 
-% to the RL controller when the target spot is detected. The vehicle then completes 
-% the parking maneuver.
-% 
-% Change the free spot to the other side of the aisle and park the vehicle again.
 
-freeSpotIndex = 6;
-setupActorVehicles(mdl,freeSpotIndex);
-sim(mdl);
+% Define the list of parking spots you want to simulate (valid indices: 1 to 23)
+spotsToSimulate = [18, 6, 10, 21, 15]; 
+
+for i = 1:length(spotsToSimulate)
+    freeSpotIndex = spotsToSimulate(i);
+    fprintf('\n=== Iniciando Simulación %d de %d: Plaza de aparcamiento libre: %d ===\n', ...
+        i, length(spotsToSimulate), freeSpotIndex);
+    
+    % Update target pose for the new free spot
+    egoTargetPose = parkingLot.findGoalPose(vehiclePose, freeSpotIndex);
+    
+    % Reset vehicle pose and update green/red spots in the 2D Visualizer
+    if exist('visualizer', 'var') && isvalid(visualizer)
+        visualizer.resetVehicle(egoInitialPose, freeSpotIndex, 0, []);
+    end
+    
+    % Place actor vehicles in Unreal Engine and clear the target spot
+    setupActorVehicles(mdl, freeSpotIndex);
+    
+    % Run simulation
+    sim(mdl);
+    
+    % Pause briefly between simulations to observe the result
+    pause(2);
+end
 %% 
 % To view the trajectory graphically, open the Ego Vehicle Pose scope.
 
