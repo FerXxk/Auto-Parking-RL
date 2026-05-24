@@ -217,6 +217,7 @@ env = rlSimulinkEnv( ...
     obsInfo, ...
     actInfo, ...
     UseFastRestart="off");
+
 %% 
 % Specify a reset function for training. The |autoParkingValetResetFcn3D| function 
 % randomly resets the initial pose of the ego vehicle at the start of each episode.
@@ -425,7 +426,7 @@ trainOpts = rlTrainingOptions(...
     Plots="training-progress",...
     StopTrainingCriteria="AverageReward",...
     StopTrainingValue=116,...
-    UseParallel=false,...
+    UseParallel=true,...
     SaveAgentCriteria="AverageReward",...
     SaveAgentValue=100,...
     SaveAgentDirectory=saveDir);
@@ -436,7 +437,7 @@ trainOpts = rlTrainingOptions(...
 % this example, load a pretrained agent by setting |doTraining| to |false|. To 
 % train the agent yourself, set |doTraining| to |true|.
 
-doTraining = true;
+doTraining = false;
 
 % Check for existing saved agent to resume training
 if doTraining && exist("SAC_Parking_Agent_v2.mat", "file")
@@ -449,6 +450,11 @@ if doTraining
     % Disable UE and point cloud visualization
     setVisualizationOptions(UEViz="off",PCViz="off"); 
 
+    % Clear visualizer to prevent issues with parallel workers
+    if exist('visualizer', 'var')
+        clear visualizer;
+    end
+
     % If a GPU device is available, enable it for agent training
     agent = setDeviceForAgentTraining(agent); 
 
@@ -459,7 +465,7 @@ if doTraining
     save("SAC_Parking_Agent_v2.mat","agent");
 
 else
-    load("SAC_Parking_Agent_v2.mat","agent");
+    load("ParkingValetAgentTrained.mat","agent");
 end
 %% 
 % 
@@ -471,7 +477,7 @@ end
 setVisualizationOptions(UEViz="on",PCViz="on");
 
 % Define the list of parking spots you want to simulate (valid indices: 1 to 23)
-spotsToSimulate = [18, 6, 10, 21, 15]; 
+spotsToSimulate = [20, 6, 10, 3, 12]; 
 
 for i = 1:length(spotsToSimulate)
     freeSpotIndex = spotsToSimulate(i);

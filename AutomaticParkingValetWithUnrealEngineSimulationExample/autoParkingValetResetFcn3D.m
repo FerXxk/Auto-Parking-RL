@@ -72,9 +72,13 @@ function in = autoParkingValetResetFcn3D(in)
     in = setVariable(in,'trainYBounds',trainYBounds);
     in = setVariable(in,'freeSpotIndex',freeSpotIndex);
 
-    % Initialize 2D visualization
-    viz = evalin('base','visualizer');
-    viz.resetVehicle(pose,freeSpotIndex,1,[trainXBounds trainYBounds])
+    % Initialize 2D visualization (skip if not available, e.g., in parallel workers)
+    try
+        viz = evalin('base','visualizer');
+        viz.resetVehicle(pose,freeSpotIndex,1,[trainXBounds trainYBounds])
+    catch
+        % Visualizer not available in parallel worker environment
+    end
 
 end
 
