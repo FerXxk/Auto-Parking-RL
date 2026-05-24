@@ -29,7 +29,7 @@ createMPCForParking3D;
 agentBlock = mdl + "/Controller/RL Controller/RL Agent";
 
 % CARGA DEL AGENTE
-archivoAgente = "ParkingValetAgentTrained.mat"; 
+archivoAgente = "SAC_Parking_Agent_v2.mat"; 
 if exist(archivoAgente, "file")
     load(archivoAgente, "agent");
     fprintf('▶️ Agente [%s] cargado con éxito en memoria.\n', archivoAgente);
@@ -137,7 +137,7 @@ end
 % ---------------------------------------------------------------------
 % 3. GUARDADO DE MATRICES TOTALES EN MAT-FILE (SIN CÁLCULOS ESTÁTICOS)
 % ---------------------------------------------------------------------
-ficheroDatos = 'Métricas_Validadas_50_Episodios.mat';
+ficheroDatos = 'SAC_100_Episodios.mat';
 save(ficheroDatos, ...
     'rewardsTotales', ...
     'pasosPorEpisodio', ...
