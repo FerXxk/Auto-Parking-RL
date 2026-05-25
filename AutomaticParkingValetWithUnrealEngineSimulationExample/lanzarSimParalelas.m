@@ -1,5 +1,5 @@
 % =====================================================================
-% SCRIPT 1: EJECUCIÓN COLECTIVA DE SIMULACIONES EN PARALELO
+% SCRIPT 1: EJECUCIÓN COLECTIVA DE SIMULACIONES EN PARALELO (CORREGIDO)
 % =====================================================================
 clc; clear; close all;
 fprintf('-> Preparando hilos del procesador para simulación por lotes...\n');
@@ -9,7 +9,7 @@ Ts = 0.1;
 Tf = 50;
 mdl = "rlAutoParkingValet3D";
 
-% Variables globales de configuración
+% Variables globales de configuración (se quedan en tu workspace principal)
 doTraining = false;          
 egoInitialPose = [40 -55 pi/2]; 
 vehiclePose = [10 -32.5 pi];  
@@ -25,7 +25,15 @@ load("ObservationBus.mat", "ObservationBus");
 autoParkingValetParams3D; 
 createMPCForParking3D; 
 
-% Configuramos los nombres de los bloques de cara a los workers
+% Asegurar que el modelo está cargado y limpio en el host antes de clonar workers
+bdclose(mdl);
+load_system(mdl);
+
+% Desactivar el renderizado 3D de Unreal Engine globalmente antes de enviar a workers
+set_param(mdl + "/Vehicle Dynamics and Sensing/Unreal Engine Visualization and Sensing", "enableUEViz", "off");
+set_param(mdl + "/Vehicle Dynamics and Sensing/Unreal Engine Visualization and Sensing", "enablePCViz", "off");
+
+% Configuración de bloques del agente
 agentBlock = mdl + "/Controller/RL Controller/RL Agent";
 
 % CARGA DEL AGENTE
@@ -34,108 +42,92 @@ if exist(archivoAgente, "file")
     load(archivoAgente, "agent");
     fprintf('▶️ Agente [%s] cargado con éxito en memoria.\n', archivoAgente);
 else
-    error('❌ Archivo de agente no encontrado. Asegúrate de tener "ParkingValetAgentTrained.mat" en la carpeta.');
+    error('❌ Archivo de agente no encontrado.');
 end
 
 % ---------------------------------------------------------------------
-% 2. EJECUCIÓN PARALELA ROBUSTA MEDIANTE PARFOR
+% 2. CREACIÓN DEL ENTORNO NATIVO (Se hace una sola vez fuera del bucle)
+% ---------------------------------------------------------------------
+obsInfo = bus2RLSpec("ObservationBus");
+actInfo = rlNumericSpec([1 1], LowerLimit=-1, UpperLimit=1);
+env = rlSimulinkEnv(mdl, agentBlock, obsInfo, actInfo, UseFastRestart="off");
+env.ResetFcn = @autoParkingValetResetFcn3D;
+
+% ---------------------------------------------------------------------
+% 3. EJECUCIÓN PARALELA NATIVA CON SIM (Forma recomendada por MathWorks)
 % ---------------------------------------------------------------------
 numEpisodiosTest = 100;
 
-% Pre-asignamos memoria en arrays nativos
+fprintf('\n🚀 Lanzando simulación paralela nativa de %d episodios...\n', numEpisodiosTest);
+% 1. Configuramos las opciones con los nombres exactos que acepta tu versión de MATLAB
+opcionesSim = rlSimulationOptions(...
+    'MaxSteps', 200, ...
+    'NumSimulations', numEpisodiosTest, ...
+    'UseParallel', true);
+
+% 2. Configuramos el sub-objeto de paralelización nativo para adjuntar el archivo
+opcionesSim.ParallelizationOptions.AttachedFiles = "ObservationBus.mat";
+
+% 3. Silenciamos el aviso del disco en tu sesión principal antes de lanzar
+warning('off', 'Simulink:Commands:ChangeOnDisk');
+
+
+% Forzamos a que el pool de workers cargue el bus en sus workspaces antes del sim
+if isempty(gcp('nocreate'))
+    parpool;
+end
+pctRunOnAll('load("ObservationBus.mat")');
+
+% Ejecución masiva: MATLAB se encarga de repartir los 100 episodios entre tus hilos
+experienciasTotales = sim(env, agent, opcionesSim);
+
+% ---------------------------------------------------------------------
+% 4. POST-PROCESAMIENTO DE TELEMETRÍA (Fuera del entorno paralelo)
+% ---------------------------------------------------------------------
+fprintf('📊 Procesando métricas de los resultados...\n');
+
 rewardsTotales = zeros(numEpisodiosTest, 1);
 pasosPorEpisodio = zeros(numEpisodiosTest, 1);
 resultadosEpisodios = zeros(numEpisodiosTest, 1); 
 variacionesVolanteLocales = zeros(numEpisodiosTest, 1);
 distanciasMinimasLocales = zeros(numEpisodiosTest, 1);
 
-fprintf('\n🚀 Lanzando bucle PARFOR de %d episodios simultáneos...\n', numEpisodiosTest);
-fprintf('🔥 Tu CPU está procesando las matemáticas en lote. Por favor, espera...\n');
-
-if isempty(gcp('nocreate'))
-    parpool;
-end
-
-parfor idx = 1:numEpisodiosTest
-    % 1. Cargar el modelo en la memoria RAM del Worker antes de tocar parámetros
-    load_system("rlAutoParkingValet3D"); 
+for idx = 1:numEpisodiosTest
+    expIndividual = experienciasTotales(idx);
     
-    % 2. Forzar borrado del visualizador fantasma para saltar el StartFcn
-    if evalin('base', 'exist("visualizer", "var")')
-        evalin('base', 'clear visualizer');
+    % Extraer premios
+    historicoPremios = expIndividual.Reward.Data;
+    rewardsTotales(idx) = sum(historicoPremios);
+    pasosPorEpisodio(idx) = length(historicoPremios);
+    
+    % Criterio de Éxito
+    recompensaFinal = historicoPremios(end);
+    if recompensaFinal > 50
+        resultadosEpisodios(idx) = 1;
+    else
+        resultadosEpisodios(idx) = 0;
     end
     
-    % 3. Inyectar variables exigidas en el workspace base de este Worker
-    assignin('base', 'doTraining', false);
-    assignin('base', 'Ts', 0.1);
-    assignin('base', 'Tf', 50);
-    assignin('base', 'mdl', "rlAutoParkingValet3D");
-    assignin('base', 'egoInitialPose', [40 -55 pi/2]);
-    assignin('base', 'vehiclePose', [10 -32.5 pi]);
-    assignin('base', 'searchDist', 10);
-    assignin('base', 'freeSpotIndex', 18);
+    % Esfuerzo de control (Volante)
+    nAcciones = fieldnames(expIndividual.Action);
+    volante = expIndividual.Action.(nAcciones{1}).Data(:);
+    volante = volante(~isnan(volante) & ~isinf(volante));
+    if length(volante) > 1
+        variacionesVolanteLocales(idx) = mean(abs(diff(volante)));
+    end
     
-    pLotWorker = ParkingLotManager;
-    assignin('base', 'parkingLot', pLotWorker);
-    assignin('base', 'info', pLotWorker.getInfo());
-    
-    % Desactivar por completo el renderizado 3D de Unreal Engine
-    set_param("rlAutoParkingValet3D/Vehicle Dynamics and Sensing/Unreal Engine Visualization and Sensing", "enableUEViz", "off");
-    set_param("rlAutoParkingValet3D/Vehicle Dynamics and Sensing/Unreal Engine Visualization and Sensing", "enablePCViz", "off");
-    
-    % 4. Crear el objeto de entorno local
-    obsInfoWorker = bus2RLSpec("ObservationBus");
-    actInfoWorker = rlNumericSpec([1 1], LowerLimit=-1, UpperLimit=1);
-    envWorker = rlSimulinkEnv(mdl, agentBlock, obsInfoWorker, actInfoWorker, UseFastRestart="off");
-    envWorker.ResetFcn = @autoParkingValetResetFcn3D;
-    
-    opcionesIndividuales = rlSimulationOptions('MaxSteps', 200, 'NumSimulations', 1, 'UseParallel', false);
-    
-    try
-        expIndividual = sim(envWorker, agent, opcionesIndividuales);
-        
-        % Extraer telemetría cruda
-        historicoPremios = expIndividual.Reward.Data;
-        rewardsTotales(idx) = sum(historicoPremios);
-        pasosPorEpisodio(idx) = length(historicoPremios);
-        
-        % Criterio de Éxito
-        recompensaFinal = historicoPremios(end);
-        if recompensaFinal > 50
-            resultadosEpisodios(idx) = 1;
-        elseif recompensaFinal < -40 || pasosPorEpisodio(idx) >= 200
-            resultadosEpisodios(idx) = 0;
-        else
-            resultadosEpisodios(idx) = 1;
-        end
-        
-        % Esfuerzo de control (Volante)
-        nAcciones = fieldnames(expIndividual.Action);
-        volante = expIndividual.Action.(nAcciones{1}).Data(:);
-        volante = volante(~isnan(volante) & ~isinf(volante));
-        if length(volante) > 1
-            variacionesVolanteLocales(idx) = mean(abs(diff(volante)));
-        end
-        
-        % Margen de Seguridad (Lidar)
-        dLidar = expIndividual.Observation.lidarData.Data(:);
-        lecturasObstaculos = dLidar(dLidar > 0.05 & dLidar < 6);
-        if ~isempty(lecturasObstaculos)
-            distanciasMinimasLocales(idx) = min(lecturasObstaculos);
-        else
-            distanciasMinimasLocales(idx) = NaN;
-        end
-        
-    catch
-        rewardsTotales(idx) = 0;
-        pasosPorEpisodio(idx) = 200;
-        resultadosEpisodios(idx) = 0;
+    % Margen de Seguridad (Lidar)
+    dLidar = expIndividual.Observation.lidarData.Data(:);
+    lecturasObstaculos = dLidar(dLidar > 0.05 & dLidar < 6);
+    if ~isempty(lecturasObstaculos)
+        distanciasMinimasLocales(idx) = min(lecturasObstaculos);
+    else
         distanciasMinimasLocales(idx) = NaN;
     end
 end
 
 % ---------------------------------------------------------------------
-% 3. GUARDADO DE MATRICES TOTALES EN MAT-FILE (SIN CÁLCULOS ESTÁTICOS)
+% 5. GUARDADO DE MATRICES TOTALES
 % ---------------------------------------------------------------------
 ficheroDatos = 'SAC_100_Episodios.mat';
 save(ficheroDatos, ...
@@ -145,5 +137,8 @@ save(ficheroDatos, ...
     'variacionesVolanteLocales', ...
     'distanciasMinimasLocales');
 
-fprintf('\n✅ Simulación completada de forma segura.\n');
+% Reactivar avisos al terminar
+warning('on', 'Simulink:Commands:ChangeOnDisk');
+
+fprintf('\n✅ Simulación completada con éxito.\n');
 fprintf('💾 Datos crudos consolidados y exportados a "%s"\n', ficheroDatos);
