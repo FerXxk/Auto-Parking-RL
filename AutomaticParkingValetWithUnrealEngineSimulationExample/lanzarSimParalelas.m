@@ -56,13 +56,16 @@ env.ResetFcn = @autoParkingValetResetFcn3D;
 % ---------------------------------------------------------------------
 % 3. EJECUCIÓN PARALELA NATIVA CON SIM
 % ---------------------------------------------------------------------
-numEpisodiosTest = 100;
+numEpisodiosTest = 28;
 fprintf('\n🚀 Lanzando simulación paralela nativa de %d episodios...\n', numEpisodiosTest);
 
+% 1. Configuramos las opciones nativas de RL
 opcionesSim = rlSimulationOptions(...
     'MaxSteps', 200, ...
     'NumSimulations', numEpisodiosTest, ...
-    'UseParallel', true);
+    'UseParallel', true, ...
+    'StopOnError', 'off',...
+    'SimulationStorageType', 'memory'); % <-- ¡AÑADE ESTA LÍNEA AQUÍ!
 
 opcionesSim.ParallelizationOptions.AttachedFiles = "ObservationBus.mat";
 warning('off', 'Simulink:Commands:ChangeOnDisk');
@@ -74,7 +77,6 @@ pctRunOnAll('load("ObservationBus.mat")');
 
 % Ejecución masiva
 experienciasTotales = sim(env, agent, opcionesSim);
-
 % ---------------------------------------------------------------------
 % 4. POST-PROCESAMIENTO DE TELEMETRÍA (MÉTRICAS DE ERROR AÑADIDAS)
 % ---------------------------------------------------------------------
