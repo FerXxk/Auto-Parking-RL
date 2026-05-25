@@ -1,5 +1,5 @@
 % =====================================================================
-% SCRIPT 1: EJECUCIÓN COLECTIVA DE SIMULACIONES EN PARALELO (CORREGIDO)
+% SCRIPT 1: EJECUCIÓN COLECTIVA DE SIMULACIONES EN PARALELO (CON ERRORES)
 % =====================================================================
 clc; clear; close all;
 fprintf('-> Preparando hilos del procesador para simulación por lotes...\n');
@@ -37,7 +37,7 @@ set_param(mdl + "/Vehicle Dynamics and Sensing/Unreal Engine Visualization and S
 agentBlock = mdl + "/Controller/RL Controller/RL Agent";
 
 % CARGA DEL AGENTE
-archivoAgente = "SAC_Parking_Agent_v2.mat"; 
+archivoAgente = "ParkingValetAgentTrained.mat"; 
 if exist(archivoAgente, "file")
     load(archivoAgente, "agent");
     fprintf('▶️ Agente [%s] cargado con éxito en memoria.\n', archivoAgente);
@@ -46,7 +46,7 @@ else
 end
 
 % ---------------------------------------------------------------------
-% 2. CREACIÓN DEL ENTORNO NATIVO (Se hace una sola vez fuera del bucle)
+% 2. CREACIÓN DEL ENTORNO NATIVO
 % ---------------------------------------------------------------------
 obsInfo = bus2RLSpec("ObservationBus");
 actInfo = rlNumericSpec([1 1], LowerLimit=-1, UpperLimit=1);
@@ -54,35 +54,29 @@ env = rlSimulinkEnv(mdl, agentBlock, obsInfo, actInfo, UseFastRestart="off");
 env.ResetFcn = @autoParkingValetResetFcn3D;
 
 % ---------------------------------------------------------------------
-% 3. EJECUCIÓN PARALELA NATIVA CON SIM (Forma recomendada por MathWorks)
+% 3. EJECUCIÓN PARALELA NATIVA CON SIM
 % ---------------------------------------------------------------------
 numEpisodiosTest = 100;
-
 fprintf('\n🚀 Lanzando simulación paralela nativa de %d episodios...\n', numEpisodiosTest);
-% 1. Configuramos las opciones con los nombres exactos que acepta tu versión de MATLAB
+
 opcionesSim = rlSimulationOptions(...
     'MaxSteps', 200, ...
     'NumSimulations', numEpisodiosTest, ...
     'UseParallel', true);
 
-% 2. Configuramos el sub-objeto de paralelización nativo para adjuntar el archivo
 opcionesSim.ParallelizationOptions.AttachedFiles = "ObservationBus.mat";
-
-% 3. Silenciamos el aviso del disco en tu sesión principal antes de lanzar
 warning('off', 'Simulink:Commands:ChangeOnDisk');
 
-
-% Forzamos a que el pool de workers cargue el bus en sus workspaces antes del sim
 if isempty(gcp('nocreate'))
     parpool;
 end
 pctRunOnAll('load("ObservationBus.mat")');
 
-% Ejecución masiva: MATLAB se encarga de repartir los 100 episodios entre tus hilos
+% Ejecución masiva
 experienciasTotales = sim(env, agent, opcionesSim);
 
 % ---------------------------------------------------------------------
-% 4. POST-PROCESAMIENTO DE TELEMETRÍA (Fuera del entorno paralelo)
+% 4. POST-PROCESAMIENTO DE TELEMETRÍA (MÉTRICAS DE ERROR AÑADIDAS)
 % ---------------------------------------------------------------------
 fprintf('📊 Procesando métricas de los resultados...\n');
 
@@ -91,6 +85,10 @@ pasosPorEpisodio = zeros(numEpisodiosTest, 1);
 resultadosEpisodios = zeros(numEpisodiosTest, 1); 
 variacionesVolanteLocales = zeros(numEpisodiosTest, 1);
 distanciasMinimasLocales = zeros(numEpisodiosTest, 1);
+
+% Nuevas matrices para almacenar los errores de aparcamiento finales
+erroresPosicionFinal = zeros(numEpisodiosTest, 1);     % Distancia en metros al centro de la plaza
+erroresOrientacionFinal = zeros(numEpisodiosTest, 1);  % Desviación en radianes (o grados) del ángulo ideal
 
 for idx = 1:numEpisodiosTest
     expIndividual = experienciasTotales(idx);
@@ -124,21 +122,36 @@ for idx = 1:numEpisodiosTest
     else
         distanciasMinimasLocales(idx) = NaN;
     end
+    
+    % -----------------------------------------------------------------
+    % EXTRACCIÓN DE ERRORES DE POSE EN EL ÚLTIMO PASO (APARCADO)
+    % -----------------------------------------------------------------
+    % Extraemos la matriz de datos de poseInfo en el último instante de tiempo
+    datosPoseFinal = expIndividual.Observation.poseInfo.Data(:,:,end);
+    
+    % NOTA: En este entorno, poseInfo suele entregar [ErrorLateral, ErrorLongitudinal, ErrorGuiado]
+    % o bien directamente la pose absoluta [X, Y, Theta] respecto a la plaza.
+    % Calculamos el error de posición euclídeo usando los dos primeros componentes:
+    erroresPosicionFinal(idx) = norm(datosPoseFinal(1:2)); 
+    
+    % El tercer componente es el error de orientación (Heading/Yaw error)
+    erroresOrientacionFinal(idx) = datosPoseFinal(3);
 end
 
 % ---------------------------------------------------------------------
-% 5. GUARDADO DE MATRICES TOTALES
+% 5. GUARDADO DE MATRICES TOTALES AMPLIADO
 % ---------------------------------------------------------------------
-ficheroDatos = 'SAC_100_Episodios.mat';
+ficheroDatos = 'TD3_100_Episodios.mat';
 save(ficheroDatos, ...
     'rewardsTotales', ...
     'pasosPorEpisodio', ...
     'resultadosEpisodios', ...
     'variacionesVolanteLocales', ...
-    'distanciasMinimasLocales');
+    'distanciasMinimasLocales', ...
+    'erroresPosicionFinal', ...      % <--- Guardado en el .mat
+    'erroresOrientacionFinal');     % <--- Guardado en el .mat
 
 % Reactivar avisos al terminar
 warning('on', 'Simulink:Commands:ChangeOnDisk');
-
 fprintf('\n✅ Simulación completada con éxito.\n');
-fprintf('💾 Datos crudos consolidados y exportados a "%s"\n', ficheroDatos);
+fprintf('💾 Datos consolidados (incluyendo errores de aparcamiento) exportados a "%s"\n', ficheroDatos);
