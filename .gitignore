@@ -26,3 +26,12 @@ Thumbs.db
 # Other
 temp/
 work/
+# Cache y temporales de Simulink / MATLAB
+slprj/
+*.slx.autosave
+*.slxc
+*.mex*
+
+# Historial y cachés de Aider (Asistente de IA)
+.aider*
+.aider.tags.cache.v4/

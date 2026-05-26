@@ -4,7 +4,7 @@
 % control (MPC) with reinforcement learning (RL) to perform a parking maneuver. 
 % Unreal Engine® is used for environment perception and visualization.
 % 
-% 
+ parallel.gpu.enableCUDAForwardCompatibility(true)
 % 
 % The control objective is to park the vehicle in an empty spot after starting 
 % from an initial pose. The control algorithm executes a series of maneuvers while 
@@ -216,7 +216,8 @@ env = rlSimulinkEnv( ...
     agentBlock, ...
     obsInfo, ...
     actInfo, ...
-    UseFastRestart="off");
+    UseFastRestart="on");
+
 %% 
 % Specify a reset function for training. The |autoParkingValetResetFcn3D| function 
 % randomly resets the initial pose of the ego vehicle at the start of each episode.
@@ -387,21 +388,52 @@ agentOpts = rlSACAgentOptions(SampleTime=Ts, ...
 % |rlOptimizerOptions|>.
 % 
 % Specify training options for the actor.
-
-agentOpts.ActorOptimizerOptions.LearnRate = 1e-4;
+% Mantener las tasas de aprendizaje (ya son altas), pero soltar el "freno" L2
+agentOpts.ActorOptimizerOptions.LearnRate = 1e-3;
 agentOpts.ActorOptimizerOptions.GradientThreshold = 1;
 agentOpts.ActorOptimizerOptions.L2RegularizationFactor = 1e-3;
 %% 
 % Specify training options for the critic.
 
-agentOpts.CriticOptimizerOptions(1).LearnRate = 1e-4;
+agentOpts.CriticOptimizerOptions(1).LearnRate = 1e-3;
 agentOpts.CriticOptimizerOptions(1).GradientThreshold = 1;
 %% 
-% Create the agent using the actor, the critics, and the agent options objects. 
-% For more information, see <docid:rl_ref#mw_e503778e-73fb-4775-877e-6a72558f405f 
-% |rlSACAgent|>.
+% Create the agent. Change algorithmType to "DDPG" for Deep Deterministic Policy Gradient.
 
-agent = rlSACAgent(actor,critic,agentOpts);
+algorithmType = "DDPG";  % Change to "SAC" for Soft Actor-Critic
+
+if strcmp(algorithmType, "DDPG")
+    % Create deterministic actor for DDPG (reusing existing paths)
+    commonPathDDPG = [
+        concatenationLayer(1,2,Name="concat")
+        reluLayer
+        fullyConnectedLayer(256)
+        reluLayer
+        fullyConnectedLayer(128)
+        reluLayer
+        fullyConnectedLayer(actInfo(1).Dimension(1))
+        tanhLayer(Name="actionOutput")];
+    
+    actorNetDDPG = layerGraph(lidarPath);
+    actorNetDDPG = addLayers(actorNetDDPG, posePath);
+    actorNetDDPG = addLayers(actorNetDDPG, commonPathDDPG);
+    
+    actorNetDDPG = connectLayers(actorNetDDPG, "lidar_fc", "concat/in1");
+    actorNetDDPG = connectLayers(actorNetDDPG, "pose_fc", "concat/in2");
+    
+    actordlnetDDPG = dlnetwork(actorNetDDPG);
+    actorDeterministic = rlContinuousDeterministicActor(actordlnetDDPG, obsInfo, actInfo);
+    
+    agentOptsDDPG = rlDDPGAgentOptions(SampleTime=Ts, DiscountFactor=0.99, ...
+        ExperienceBufferLength=1e6, MiniBatchSize=256);
+    agentOptsDDPG.ActorOptimizerOptions.LearnRate = 1e-4;
+    agentOptsDDPG.CriticOptimizerOptions.LearnRate = 1e-3;
+    
+    agent = rlDDPGAgent(actorDeterministic, critic, agentOptsDDPG);
+else
+    % Create the agent using the actor, the critics, and the agent options objects.
+    agent = rlSACAgent(actor,critic,agentOpts);
+end
 
 % Train Agent
 % To train the agent, first specify the training options.
@@ -425,7 +457,7 @@ trainOpts = rlTrainingOptions(...
     Plots="training-progress",...
     StopTrainingCriteria="AverageReward",...
     StopTrainingValue=116,...
-    UseParallel=false,...
+    UseParallel=true,...
     SaveAgentCriteria="AverageReward",...
     SaveAgentValue=100,...
     SaveAgentDirectory=saveDir);
@@ -436,12 +468,12 @@ trainOpts = rlTrainingOptions(...
 % this example, load a pretrained agent by setting |doTraining| to |false|. To 
 % train the agent yourself, set |doTraining| to |true|.
 
-doTraining = true;
+doTraining = false;
 
 % Check for existing saved agent to resume training
-if doTraining && exist("SAC_Parking_Agent.mat", "file")
-    load("SAC_Parking_Agent.mat", "agent");
-    disp(">>> Agente SAC detectado: Cargando pesos anteriores para continuar el entrenamiento.");
+if doTraining && exist("DDPG_Parking_Agent_Trained.mat", "file")
+    load("DDPG_Parking_Agent_Trained.mat", "agent");
+    disp(">>> Agente DDPG detectado: Cargando pesos anteriores para continuar el entrenamiento.");
 end
 
 if doTraining
@@ -449,37 +481,63 @@ if doTraining
     % Disable UE and point cloud visualization
     setVisualizationOptions(UEViz="off",PCViz="off"); 
 
+    % Clear visualizer to prevent issues with parallel workers
+    if exist('visualizer', 'var')
+        clear visualizer;
+    end
+
     % If a GPU device is available, enable it for agent training
     agent = setDeviceForAgentTraining(agent); 
 
     % Start training agent
     trainingResult = train(agent,env,trainOpts); 
 
-    % Save the trained SAC agent
-    save("SAC_Parking_Agent.mat","agent");
+    % Save the trained agent
+    if strcmp(algorithmType, "DDPG")
+        save("DDPG_Parking_Agent_Trained.mat","agent");
+    else
+        save("SAC_Parking_Agent_v2.mat","agent");
+    end
 
 else
-    load("ParkingValetAgentTrained.mat","agent");
+        % Modelo que quiero usar en la simulacion
+        load("SAC_Parking_Agent_v2.mat","agent");
+   
 end
 %% 
 % 
 %% Simulate Parking Task
 % To validate the trained agent, simulate the model and observe the parking 
-% maneuver. Enable both Unreal Engine and point cloud visualization to get a more 
-% complete view of the vehicle's behavior.
+% maneuver across multiple parking spots. Enable both Unreal Engine and 
+% point cloud visualization to get a more complete view of the vehicle's behavior.
 
 setVisualizationOptions(UEViz="on",PCViz="on");
-sim(mdl);
-%% 
-% The vehicle tracks the reference path using the MPC controller before switching 
-% to the RL controller when the target spot is detected. The vehicle then completes 
-% the parking maneuver.
-% 
-% Change the free spot to the other side of the aisle and park the vehicle again.
 
-freeSpotIndex = 6;
-setupActorVehicles(mdl,freeSpotIndex);
-sim(mdl);
+% Define the list of parking spots you want to simulate (valid indices: 1 to 23)
+spotsToSimulate = [20, 6, 17, 1, 12]; 
+
+for i = 1:length(spotsToSimulate)
+    freeSpotIndex = spotsToSimulate(i);
+    fprintf('\n=== Iniciando Simulación %d de %d: Plaza de aparcamiento libre: %d ===\n', ...
+        i, length(spotsToSimulate), freeSpotIndex);
+    
+    % Update target pose for the new free spot
+    egoTargetPose = parkingLot.findGoalPose(vehiclePose, freeSpotIndex);
+    
+    % Reset vehicle pose and update green/red spots in the 2D Visualizer
+    if exist('visualizer', 'var') && isvalid(visualizer)
+        visualizer.resetVehicle(egoInitialPose, freeSpotIndex, 0, []);
+    end
+    
+    % Place actor vehicles in Unreal Engine and clear the target spot
+    setupActorVehicles(mdl, freeSpotIndex);
+    
+    % Run simulation
+    sim(mdl);
+    
+    % Pause briefly between simulations to observe the result
+    pause(2);
+end
 %% 
 % To view the trajectory graphically, open the Ego Vehicle Pose scope.
 
