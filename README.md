@@ -304,20 +304,32 @@ Training options are configured inside `RL_Parking_And_Control.m` via `rlTrainin
 **Monitor training progress** in the Episode Manager window — watch cumulative reward climb and episode length shrink as the agent learns to park efficiently.
 
 
+<div align="center">
+  <img src="images/FinalEntrenamientoSAC.png" width="80%" alt="SAC training curve — cumulative reward per episode"/>
+  <br/><sub>SAC training curve — cumulative reward per episode</sub>
+</div>
+
 ---
 
 ## 📊 Results
 
+<div align="center"  style="margin-bottom: 40px;">
+  <img src="images/SAC_metricas.png" width="90%" alt="Results"/>
+  <br/><sub>Results from 100 episodes simulation with SAC agent</sub>
+</div>
+
+
+
+<div align="center"   style="margin-bottom: 40px;">
+  <img src="images/TD3_metricas.png" width="90%" alt="Results"/>
+  <br/><sub>Results from 100 episodes simulation with TD3 agent</sub>
+</div>
+
+
+
 <div align="center">
-
-| Metric | Value |
-|--------|-------|
-| Parking success rate | > 90 % (pre-trained TD3, seen spots) |
-| Mean parking time | ~10.8 s after spot detection |
-| Final pose error | < 0.3 m lateral, < 0.1 rad heading |
-| Collision rate | < 5 % on held-out configurations |
-| MPC path tracking RMSE | < 0.15 m lateral deviation |
-
+  <img src="images/DDPG_metricas.png" width="90%" alt="Results"/>
+  <br/><sub>Results from 100 episodes simulation with DDPG agent</sub>
 </div>
 
 ---
