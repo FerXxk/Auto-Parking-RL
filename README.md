@@ -6,7 +6,7 @@
 
 ---
 
-## 🎯 Purpose of the Project
+## Purpose of the Project
 
 The core objective of this project is to design, evaluate, and simulate an advanced hybrid control system capable of navigating an autonomous vehicle through a complex parking lot environment, searching for an empty spot, and executing precise parking maneuvers. 
 
@@ -18,27 +18,26 @@ The entire environment, vehicle kinematics, sensor perception, and multi-agent c
 
 ---
 
-## 🚀 How to Use It
+## How to Use It
 
 ### 1. Clone the Repository
 Open your terminal and clone the repository to your local machine:
 ```bash
-git clone [https://github.com/FerXxk/Auto-Parking-RL.git](https://github.com/FerXxk/Auto-Parking-RL.git)
+git clone https://github.com/FerXxk/Auto-Parking-RL.git
 cd Auto-Parking-RL
+```
 
-2. Run a Pre-trained Simulation
+### 2. Run a Pre-trained Simulation
 To see the hybrid controller in action without waiting for a long training cycle to complete, follow these steps inside MATLAB:
 
-Launch MATLAB and set the repository root directory as your current folder.
-
-Open the primary entry-point script (RL_Parking_And_Control.m) or the core Simulink model (rlAutoParkingValet3D.slx).
-
-In the MATLAB Workspace, ensure the training flag is set to false so the model uses the pre-trained weights:
-
-Matlab
-doTraining = false;
-Set your target custom pose or index for the specific spot you want to test (e.g., Target Spot 17):
-
-Matlab
-egoTargetPose = [2.8875, -38.5600, -1.5708];
-Click the Run button in Simulink. The Unreal Engine 3D viewport window will open, showcasing the vehicle tracking the path, switching modes, and parking autonomously.
+1. Launch MATLAB and set the repository root directory as your current folder.
+2. Open the primary entry-point script (RL_Parking_And_Control.m) or the core Simulink model (rlAutoParkingValet3D.slx).
+3. In the MATLAB Workspace, ensure the training flag is set to false so the model uses the pre-trained weights:
+   ```Matlab
+   doTraining = false;
+   ```
+4. Set your target custom pose or index for the specific spot you want to test (e.g., Target Spot 17):
+   ```Matlab
+   egoTargetPose = [2.8875, -38.5600, -1.5708];
+   ```
+5. Click the Run button in Simulink. The Unreal Engine 3D viewport window will open, showcasing the vehicle tracking the path, switching modes, and parking autonomously.
