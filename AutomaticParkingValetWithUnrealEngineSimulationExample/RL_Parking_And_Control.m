@@ -468,7 +468,7 @@ trainOpts = rlTrainingOptions(...
 % this example, load a pretrained agent by setting |doTraining| to |false|. To 
 % train the agent yourself, set |doTraining| to |true|.
 
-doTraining = true;
+doTraining = false;
 
 % Check for existing saved agent to resume training
 if doTraining && exist("DDPG_Parking_Agent_Trained.mat", "file")
@@ -500,15 +500,9 @@ if doTraining
     end
 
 else
-    if strcmp(algorithmType, "DDPG")
-        if exist("DDPG_Parking_Agent_Trained.mat", "file")
-            load("DDPG_Parking_Agent_Trained.mat", "agent");
-        else
-            error('DDPG agent file not found.');
-        end
-    else
-        load("ParkingValetAgentTrained.mat","agent");
-    end
+        % Modelo que quiero usar en la simulacion
+        load("SAC_Parking_Agent_v2.mat","agent");
+   
 end
 %% 
 % 
@@ -520,7 +514,7 @@ end
 setVisualizationOptions(UEViz="on",PCViz="on");
 
 % Define the list of parking spots you want to simulate (valid indices: 1 to 23)
-spotsToSimulate = [20, 6, 10, 3, 12]; 
+spotsToSimulate = [20, 6, 17, 1, 12]; 
 
 for i = 1:length(spotsToSimulate)
     freeSpotIndex = spotsToSimulate(i);
