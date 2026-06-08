@@ -32,6 +32,7 @@
 
 - [Overview](#-overview)
 - [How it works](#-how-it-works)
+- [Key contributions](#-key-contributions)
 - [Architecture](#-architecture)
 - [Sensor stack](#-sensor-stack)
 - [Tracking Controllers](#-tracking-controllers)
@@ -43,6 +44,7 @@
 - [Quick start](#-quick-start)
 - [Training from scratch](#-training-from-scratch)
 - [Results](#-results)
+- [Future work](#-future-work)
 - [File structure](#-file-structure)
 - [Requirements](#-requirements)
 - [References](#-references)
@@ -97,6 +99,15 @@ The system operates in two distinct phases, triggered by a central **mode switch
 3. **Mode switch** — the `Vehicle Mode Selector` detects an empty spot and flips `isParking = true`, activating the RL agent subsystem and freezing the tracking controller.
 4. **Parking phase** — the DRL agent reads the 3D Lidar point cloud and the relative pose error `[Δx, Δy, Δθ]`, then outputs a continuous steering angle and velocity command to slot the vehicle in.
 5. **Done** — the episode ends when the vehicle is within tolerance of the target pose or a collision/timeout is detected.
+
+---
+
+## 🏆 Key Contributions
+
+* **Homogeneous Comparison of 5 Tracking Controllers:** Provides the first direct comparison of **Pure Pursuit, Stanley, LQR, Adaptive MPC, and Nonlinear MPC** in the same parking lot scenario with identical initial conditions. Results show that the **Adaptive MPC** achieves accuracy identical to the Nonlinear MPC while requiring 79 times less computation.
+* **Hybrid MPC + DRL Architecture:** Proposes and validates a hybrid control scheme that combines the mathematical predictability and low computational cost of classical tracking controllers for searching, with the reactive adaptability of a Deep Reinforcement Learning agent for the final tight parking maneuver.
+* **Stateflow Chattering Mitigation:** Formulates a mathematical and temporal solution using a **minimum dwell-time timer** (1.0s) inside Stateflow to prevent high-frequency chattering between forward and reverse modes under sensor noise.
+* **Quantitative Cinematic Model Justification:** Establishes a critical velocity threshold ($v_c \approx 6.67 \text{ m/s}$) to mathematically justify the validity of using a kinematic model instead of a complex dynamic model for low-speed parking operations.
 
 ---
 
@@ -180,6 +191,11 @@ Implemented in [pure_pursuit_control.m](AutomaticParkingValetWithUnrealEngineSim
 
 The profiling and evaluation framework in [analisis.m](AutomaticParkingValetWithUnrealEngineSimulationExample/analisis.m) facilitates comparison of the different controllers (Pure Pursuit, Stanley, LQR, Adaptive MPC, Nonlinear MPC).
 
+<div align="center" style="margin-bottom: 25px;">
+  <img src="images/figura_01_comparativa_controladores.png" width="90%" alt="Controller comparison results"/>
+  <br/><sub>Figure 1: Comparison of tracking controllers (trajectory tracking error, lateral error, orientation error, and steering command)</sub>
+</div>
+
 ### Key Performance Indicators (KPIs)
 * **Tracking Precision:** Root Mean Square Error (RMSE) and Maximum/Average error for both lateral displacement and heading/orientation.
 * **Control Smoothness:** Energy cost of the steering action ($\int \delta^2 \, dt$) and command smoothness/zigzagging ($\int (\dot{\delta})^2 \, dt$).
@@ -189,7 +205,7 @@ The profiling and evaluation framework in [analisis.m](AutomaticParkingValetWith
 1. Select the desired tracking controller in Simulink.
 2. Run the simulation through the script to collect log variables (`egoPose`, `reference`, `accel_steer`, `isParking`).
 3. View and record the execution time from the Simulink Profiler report.
-4. Store results in `resultados_controladores.mat` and call `compararTodos()` to plot overlay trajectories, comparative bar charts, and error distributions.
+4. Store results in `AutomaticParkingValetWithUnrealEngineSimulationExample/metrics/resultados_controladores.mat` and call `compararTodos()` to plot overlay trajectories, comparative bar charts, and error distributions.
 
 ---
 
@@ -324,7 +340,7 @@ The project supports benchmarking multiple path tracking controllers. To run the
 5. Run the script step-by-step using **Run Section** (`Ctrl + Enter`) or run it in parts:
    * **PASO 1**: Simulates the model with the Simulink Profiler activated to collect the vehicle trajectory, control commands, and computation times.
    * **PASO 2**: Calculates precision metrics (RMSE, max/mean lateral and heading error) and control effort/smoothness. If you want to log computational cost, read the execution time from the generated Profiler report and set it in `total_time_profiler` before executing this section.
-   * **PASO 3**: Saves the computed metrics to `resultados_controladores.mat`.
+   * **PASO 3**: Saves the computed metrics to `AutomaticParkingValetWithUnrealEngineSimulationExample/metrics/resultados_controladores.mat`.
    * **PASO 4 & 5**: Executing these sections displays a comparative table in the command window and generates plots overlaying trajectories, comparing tracking precision (RMSE/Max/Mean), and comparing heading error side-by-side.
 
 ---
@@ -370,6 +386,18 @@ Training options are configured inside `RL_Parking_And_Control.m` via `rlTrainin
   <img src="images/DDPG_metricas.png" width="90%" alt="Results"/>
   <br/><sub>Results from 100 episodes simulation with DDPG agent</sub>
 </div>
+
+---
+
+## 🔮 Future Work
+
+* **Action Derivative Penalty in SAC:** Incorporate a penalty on the steering rate ($\dot{\delta}^2$) in the SAC reward function to reduce control effort and smooth out steering actions without sacrificing exploration or success rate.
+* **Expanded DRL Validation:** Increase the validation run to at least 500 episodes to obtain statistically significant confidence intervals for comparing TD3 and SAC.
+* **Embedded Hardware Evaluation:** Test the execution times of Adaptive MPC and Nonlinear MPC on embedded devices (e.g., NVIDIA Jetson, ARM Cortex) to evaluate real-world feasibility under the $T_s = 0.1 \text{ s}$ sampling constraint.
+* **Transition Continuity Analysis:** Study and optimize the handoff boundary between the tracking controller and the DRL agent, ensuring continuous states (velocity, steering angle, and pose).
+* **Sim-to-Real Domain Randomization:** Implement parameter randomization on Lidar noise, surface friction coefficients, and vehicle wheelbase/steering limits to improve robustness for physical deployments.
+* **High-Speed/Curvature Validation:** Test and analyze the degradation of the Adaptive MPC-Nonlinear MPC equivalence in high-speed (e.g., $>5\text{ m/s}$) or extremely sharp turn scenarios.
+* **Formal Verification Pipeline:** Integrate neural network verification tools (e.g., Reluplex) to mathematically guarantee collision-free actions within bounded state regions.
 
 ---
 

@@ -134,9 +134,9 @@ end
 
 %% PASO 3 - GUARDAR LOS RESULTADOS DE ESTE CONTROLADOR
 % -------------------------------------------------------------------------
-% Acumula los resultados en 'resultados_controladores.mat'. Cada vez que
+% Acumula los resultados en 'metrics/resultados_controladores.mat'. Cada vez que
 % analices un controlador distinto, se añade (o se actualiza si repites).
-archivoRes = 'resultados_controladores.mat';
+archivoRes = fullfile(fileparts(mfilename('fullpath')), 'metrics', 'resultados_controladores.mat');
 
 if isfile(archivoRes)
     R = load(archivoRes);
