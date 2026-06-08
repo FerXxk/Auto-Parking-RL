@@ -22,6 +22,13 @@
 
 > *A production-grade digital twin that fuses classical optimal control with modern deep RL — the vehicle searches, decides, and parks itself, entirely autonomously.*
 
+<p align="center">
+  <strong>
+    📄 <a href="docs/report.pdf">Project Report</a> &nbsp;•&nbsp; 
+    📊 <a href="docs/slides.pdf">Presentation Slides</a>
+  </strong>
+</p>
+
 <br/>
 
 ---
@@ -31,6 +38,7 @@
 ## 📌 Table of Contents
 
 - [Overview](#-overview)
+- [Project Documentation](#-project-documentation)
 - [How it works](#-how-it-works)
 - [Key contributions](#-key-contributions)
 - [Architecture](#-architecture)
@@ -54,6 +62,17 @@
 ## 🎯 Overview
 
 This project implements a **hybrid autonomous parking system** capable of navigating a photorealistic parking lot, finding a free spot, and executing a precise parking maneuver — all without human intervention.
+
+---
+
+## 📄 Project Documentation
+
+For a detailed academic breakdown, theoretical formulations, and complete experimental analysis, please refer to the documents located in the [docs/](docs/) folder:
+
+* 📘 **[Project Report / Memoria (PDF)](docs/report.pdf):** The full manuscript containing the mathematical foundations of all 5 tracking controllers (Pure Pursuit, Stanley, LQR, Adaptive MPC, Nonlinear MPC), state-space formulations, DRL reward shaping design, chattering mitigation, and Sim-to-Real gap analysis.
+* 📊 **[Presentation Slides (PDF)](docs/slides.pdf):** The presentation slides summarizing the project architecture, key metrics, comparative results, and future work.
+
+---
 
 The core innovation is a **seamless handoff** between two complementary control paradigms:
 
@@ -465,7 +484,7 @@ Auto-Parking-RL/
 
 <br/>
 
-Made by  · [Fernando Román](https://github.com/FerXxk) ·  [Jose Antonio García](https://github.com/FerXxk) · [Andrés Martínez](https://github.com/FerXxk)
+Made by  · [Fernando Román](https://github.com/FerXxk) ·  [Jose Antonio García](https://github.com/josgarcam4) · [Andrés Martínez](https://github.com/andmarmar)
 
 <br/>
 
