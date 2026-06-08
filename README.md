@@ -34,7 +34,8 @@
 - [How it works](#-how-it-works)
 - [Architecture](#-architecture)
 - [Sensor stack](#-sensor-stack)
-- [MPC controller](#-adaptive-mpc-controller)
+- [Tracking Controllers](#-tracking-controllers)
+- [Benchmarking & Evaluation](#-benchmarking--evaluation)
 - [DRL agent](#-deep-reinforcement-learning-agent)
 - [Reward design](#-reward-function-design)
 - [Supported algorithms](#-supported-rl-algorithms)
@@ -56,8 +57,8 @@ The core innovation is a **seamless handoff** between two complementary control 
 
 | Phase | Controller | Task |
 |-------|-----------|------|
-| 🔍 **Search** | Adaptive MPC | Follow reference path at constant speed, scan for free spots |
-| 🅿️ **Park** | DRL Agent (DDPG / TD3 / SAC) | Execute collision-free parking maneuver using Lidar feedback |
+| 🔍 **Search** / Track | **Tracking Controllers**<br/>*(Adaptive MPC, Nonlinear MPC, LQR, Pure Pursuit, Stanley)* | Follow reference path at constant speed, scan for free spots |
+| 🅿️ **Park** | **DRL Agent**<br/>*(DDPG / TD3 / SAC)* | Execute collision-free parking maneuver using Lidar feedback |
 
 The entire system runs as a **digital twin** inside Unreal Engine®, co-simulated with MATLAB/Simulink — providing photorealistic sensor data and vehicle dynamics with zero real-world risk.
 
@@ -77,23 +78,23 @@ The entire system runs as a **digital twin** inside Unreal Engine®, co-simulate
 The system operates in two distinct phases, triggered by a central **mode switch** signal (`isParking`):
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        HYBRID CONTROLLER                        │
-│                                                                 │
-│  ┌──────────────────┐   spot found?   ┌─────────────────────┐  │
-│  │   Adaptive MPC   │ ──────────────► │    DRL Agent        │  │
-│  │  (search mode)   │                 │  (parking mode)     │  │
-│  │                  │                 │  DDPG / TD3 / SAC   │  │
-│  └──────────────────┘                 └─────────────────────┘  │
-│           ▲                                     ▲               │
-│           │          Vehicle Mode Selector      │               │
-│           └──────────── isParking ──────────────┘               │
-└─────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│                          HYBRID CONTROLLER                             │
+│                                                                        │
+│  ┌──────────────────────┐  spot found?     ┌──────────────────────┐    │
+│  │ Tracking Controller  │  ──────────────► │      DRL Agent       │    │
+│  │     (search mode)    │                  │   (parking mode)     │    │
+│  │  (MPC/LQR/Pursuit)   │                  │  DDPG / TD3 / SAC    │    │
+│  └──────────────────────┘                  └──────────────────────┘    │
+│            ▲                                       ▲                   │
+│            │         Vehicle Mode Selector         │                   │
+│            └──────────── isParking ────────────────┘                   │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 1. **Initialization** — the vehicle spawns at the southeast corner of the lot; the global path planner generates the reference trajectory.
-2. **Search phase** — the Adaptive MPC tracks the reference path while the virtual camera and Lidar modules scan each parking row.
-3. **Mode switch** — the `Vehicle Mode Selector` detects an empty spot and flips `isParking = true`, activating the RL agent subsystem and freezing the MPC.
+2. **Search phase** — the selected Tracking Controller (Adaptive MPC by default, or choice of LQR, Nonlinear MPC, Pure Pursuit, or Stanley) tracks the reference path while the virtual camera and Lidar modules scan each parking row.
+3. **Mode switch** — the `Vehicle Mode Selector` detects an empty spot and flips `isParking = true`, activating the RL agent subsystem and freezing the tracking controller.
 4. **Parking phase** — the DRL agent reads the 3D Lidar point cloud and the relative pose error `[Δx, Δy, Δθ]`, then outputs a continuous steering angle and velocity command to slot the vehicle in.
 5. **Done** — the episode ends when the vehicle is within tolerance of the target pose or a collision/timeout is detected.
 
@@ -143,31 +144,52 @@ The `RL_Parking_And_Control.m` script is the **single entry point** — it wires
 
 ---
 
-## 🧭 Adaptive MPC Controller
+## 🧭 Tracking Controllers
 
-The MPC controller tracks the global reference trajectory by solving a **constrained finite-horizon optimisation** at every timestep `Ts = 0.1 s`.
+The project features multiple path tracking controllers to guide the vehicle along the global reference trajectory during the **Search Phase**. These controllers can be swapped and compared within the Simulink model.
 
-**State vector:**
-```
-x = [X, Y, θ, v]   (position, heading, speed)
-```
+### 1. Adaptive MPC
+The default tracking controller. It solves a **constrained finite-horizon optimisation** at every timestep `Ts = 0.1 s`.
+* **State vector:** $x = [X, Y, \theta, v]^T$ (position, heading, speed)
+* **Control inputs:** $u = [\delta, a]^T$ (steering angle, acceleration)
+* **Adaptation:** The prediction model updates its linearisation at each step based on the current velocity, avoiding full nonlinear MPC overhead while preserving accuracy.
+* **Constraints:** Steering angle $|\delta| \le 0.5\text{ rad}$, speed $0 \le v \le 5\text{ m/s}$, steering rate $|\Delta\delta| \le 0.1\text{ rad/step}$.
 
-**Control inputs:**
-```
-u = [δ, a]   (steering angle, acceleration)
-```
+### 2. Nonlinear MPC (NLMPC)
+Implemented in [createNonLinearMPCForParking3D.m](AutomaticParkingValetWithUnrealEngineSimulationExample/createNonLinearMPCForParking3D.m).
+* Uses a continuous-time nonlinear kinematic bicycle model (`vehicleStateFcn.m`).
+* Tracks the reference path by directly solving the nonlinear optimization problem without local linearization.
+* **States:** $x = [X, Y, \theta]^T$, **Inputs:** $u = [v, \delta]^T$.
+* Enforces equivalent control weights and physical constraints to the Adaptive MPC, optimized via a custom solver setting (maximum 50 iterations per step).
 
-**Objective:**
-```
-min  Σ [ (y - y_ref)ᵀ Q (y - y_ref) + uᵀ R u ]
-```
+### 3. LQR (Linear Quadratic Regulator)
+Implemented in [createLQRForParking3D.m](AutomaticParkingValetWithUnrealEngineSimulationExample/createLQRForParking3D.m).
+* A discrete-time infinite-horizon LQR designed around a neutral operating point (heading $\theta = 0$, looking straight ahead).
+* State-space model matrices ($A_d, B_d$) are generated via `vehicleStateJacobianFcnDT.m` with nominal velocity $v_{\text{ref}} = 2.5\text{ m/s}$.
+* Weighted tracking priority: uses state weights $Q = \text{diag}([1, 15, 5])$ to penalize lateral tracking error heavily, ensuring robust path alignment.
 
-The *adaptive* part means the internal prediction model updates its linearisation at each step to match the current vehicle speed — crucial for maintaining accuracy at varying velocities without full nonlinear MPC overhead.
+### 4. Pure Pursuit with Adaptive Lookahead
+Implemented in [pure_pursuit_control.m](AutomaticParkingValetWithUnrealEngineSimulationExample/pure_pursuit_control.m).
+* Projects a dynamic lookahead distance ($L_d$) along the path to calculate the target steering command.
+* **Adaptive Lookahead:** In straight lines, lookahead extends up to $14.0\text{ m}$ to prevent steering oscillations; in curves, lookahead shrinks down to $1.5\text{ m}$ (with a minimum floor of $3.0\text{ m}$).
+* Uses a nonlinear transition (`sqrt(curvatura_norm)`) to aggressively reduce the lookahead distance as soon as curvature is detected ahead, providing proactive steering response.
 
-**Constraints enforced:**
-- Steering angle: `|δ| ≤ 0.5 rad`
-- Speed: `0 ≤ v ≤ 5 m/s`
-- Steering rate: `|Δδ| ≤ 0.1 rad/step`
+---
+
+## 📊 Benchmarking & Evaluation
+
+The profiling and evaluation framework in [analisis.m](AutomaticParkingValetWithUnrealEngineSimulationExample/analisis.m) facilitates comparison of the different controllers (Pure Pursuit, Stanley, LQR, Adaptive MPC, Nonlinear MPC).
+
+### Key Performance Indicators (KPIs)
+* **Tracking Precision:** Root Mean Square Error (RMSE) and Maximum/Average error for both lateral displacement and heading/orientation.
+* **Control Smoothness:** Energy cost of the steering action ($\int \delta^2 \, dt$) and command smoothness/zigzagging ($\int (\dot{\delta})^2 \, dt$).
+* **Computational Cost:** Profiling of block execution times via the Simulink Profiler, normalized as *cost-per-step* (in microseconds) for a hardware-agnostic comparison.
+
+### Workflow
+1. Select the desired tracking controller in Simulink.
+2. Run the simulation through the script to collect log variables (`egoPose`, `reference`, `accel_steer`, `isParking`).
+3. View and record the execution time from the Simulink Profiler report.
+4. Store results in `resultados_controladores.mat` and call `compararTodos()` to plot overlay trajectories, comparative bar charts, and error distributions.
 
 ---
 
@@ -288,6 +310,23 @@ Click **Run** in Simulink (`rlAutoParkingValet3D.slx`). The Unreal Engine 3D vie
 spotsToSimulate = [20, 6, 17, 1, 12]; 
 ```
 
+### 5 — Run tracking controller benchmarking & comparison
+
+The project supports benchmarking multiple path tracking controllers. To run the analysis and compare their performance:
+
+1. Open the Simulink model `rlAutoParkingValet3D.slx`.
+2. Inside the Simulink model, manually select the controller block you want to evaluate (e.g. **Pure Pursuit**, **Stanley**, **Adaptive MPC**, **Nonlinear MPC**, or **LQR**).
+3. Open the evaluation script [analisis.m](AutomaticParkingValetWithUnrealEngineSimulationExample/analisis.m) in MATLAB.
+4. Set the name of the active controller in the script under **PASO 2**:
+   ```matlab
+   nombreCtrl = 'Stanley'; % Change to matches the active controller: 'LQR', 'Pure Pursuit', etc.
+   ```
+5. Run the script step-by-step using **Run Section** (`Ctrl + Enter`) or run it in parts:
+   * **PASO 1**: Simulates the model with the Simulink Profiler activated to collect the vehicle trajectory, control commands, and computation times.
+   * **PASO 2**: Calculates precision metrics (RMSE, max/mean lateral and heading error) and control effort/smoothness. If you want to log computational cost, read the execution time from the generated Profiler report and set it in `total_time_profiler` before executing this section.
+   * **PASO 3**: Saves the computed metrics to `resultados_controladores.mat`.
+   * **PASO 4 & 5**: Executing these sections displays a comparative table in the command window and generates plots overlaying trajectories, comparing tracking precision (RMSE/Max/Mean), and comparing heading error side-by-side.
+
 ---
 
 ## 🏋️ Training From Scratch
@@ -348,6 +387,10 @@ Auto-Parking-RL/
 │   ├── ParkingLotVisualizer.m            ← 2D visualisation utility
 │   ├── setupActorVehicles.m              ← Populate lot with static vehicles
 │   ├── createReferenceTrajectory.m       ← Global path generator
+│   ├── createLQRForParking3D.m           ← LQR controller design
+│   ├── createNonLinearMPCForParking3D.m  ← Nonlinear MPC controller design
+│   ├── pure_pursuit_control.m            ← Pure Pursuit with adaptive lookahead
+│   ├── analisis.m                        ← Benchmarking & evaluation framework
 │   └── *.m / *.mat                       ← Agent networks, helper functions
 │
 ├── images/                               ← Figures and screenshots
